@@ -44,31 +44,29 @@ class QP:
 
         self.K[0:A_m, P_n:P_n+A_n] = self.A.T
         self.K[0:G_m, P_n + A_n:] = self.G.T
-        self.K[-G_n:, -G_n:] = np.eye(G_n)
+        self.K[-G_n:, -G_n:] = -np.eye(G_n)
 
         self.K0 = self.K
 
         K_b = np.hstack((-self.c, self.b))
         K_b = np.hstack((K_b, self.h)).T
         self.K_b = np.expand_dims(K_b,axis=1) #shape: 6x1
-        # print(f'K_b shape : {self.K_b.shape}')
 
         factor = cholesky(sparse.csr_matrix(self.K))
         Dir = factor(K_b) #shape: (6,)
-        # print(f'Solution : {Dir}, Shape : {Dir.shape}')
         
         x_0 = np.expand_dims(Dir[:P_n],axis=1)
         y_0 = np.expand_dims(Dir[P_n:P_n+A_n],axis=1)
         
         z_cap = Dir[-G_n:]
 
-        a_p = np.max(z_cap)
+        a_p = np.amax(z_cap)
         if a_p<0:
             s_0 = -z_cap
         else:
             s_0 = -z_cap + (1+a_p)*np.ones(G_n)
         
-        a_d = np.max(-z_cap)
+        a_d = np.amax(-z_cap)
         if a_d<0:
             z_0 = z_cap
         else:
@@ -76,8 +74,6 @@ class QP:
 
         z_0 = np.expand_dims(z_0,axis=1)
         s_0 = np.expand_dims(s_0,axis=1)
-
-        # print(f'Shapes : {x_0.shape},{y_0.shape},{z_0.shape},{s_0.shape}')
 
         return x_0, y_0, z_0, s_0
     
@@ -89,21 +85,18 @@ class QP:
 
         state = np.vstack((self.xk, self.yk))
         state = np.vstack((state, self.zk)) #shape : 6x1
-        # print(f'State shape: {state.shape}')
 
         s_state = np.zeros(state.shape)
-        # print(s_state.shape)
         s_state[-self.sk.shape[0]:,:] = self.sk
+        # print(f's_state : {s_state},{s_state.shape}')
 
         r = s_state + np.dot(self.K0, state) + K_b
-        # print(r.shape)
 
         self.lamda = np.sqrt(np.multiply(self.sk, self.zk))
-        r_s = -np.multiply(self.lamda, self.lamda) #not used in any other equation here
 
         #LHS of eqn 20
         self.K_w = self.K0
-        Wt_W = np.multiply(np.divide(self.sk,self.zk),np.eye(self.G_n))
+        Wt_W = np.multiply(np.eye(self.G_n),np.divide(self.sk,self.zk))
         self.K_w[-self.G_n:,-self.G_n:] = -Wt_W
 
         #RHS of eqn 20
@@ -119,36 +112,51 @@ class QP:
     def compute_centering_params(self, del_state_a, Wt_W):
         
         # eqn 19
-        G_n = self.G.shape[0]
-        del_za = del_state_a[-G_n:]
+        del_za = del_state_a[-self.G_n:]
         del_sa = -np.dot(Wt_W, del_za) - self.sk
 
-        s_max = np.max(np.divide(-self.sk,del_sa))
-        z_max = np.max(np.divide(-self.zk,del_za))
-        alpha = max(s_max,z_max)
+        alpha_p = 1e10
+        alpha_d = 1e10
+        flag1 = 0
+        flag2 = 0
+
+        for i in range(self.sk.shape[0]):
+            if del_sa[i]<0 and (-self.sk[i]/del_sa[i])<alpha_p:
+                alpha_p = -self.sk[i]/del_sa[i]
+                flag1 = 1
         
-        rho_n = np.dot((self.sk + alpha*del_sa),(self.zk + alpha*del_za))
-        rho_d = np.dot(self.sk,self.zk)
+            if del_za[i]<0 and (-self.zk[i]/del_za[i])<alpha_d:
+                alpha_d = -self.zk[i]/del_za[i]
+                flag2 = 1
+        
+        if(flag1==0):
+            alpha_p=1
+        if(flag2==0):
+            alpha_d=1
+        
+        rho_n = np.dot((self.sk + alpha_p*del_sa).T,(self.zk + alpha_d*del_za))
+        rho_d = np.dot(self.sk.T,self.zk)
         rho = rho_n/rho_d
 
         sigma = max(0,(min(1,rho))**3)
         
-        return del_sa, sigma, alpha
+        return del_sa, sigma, 1
 
     def correction_step(self, del_sa, sigma, del_state_a, r, Wt_W):
         # Mehrotra Steps
         G_n = self.G.shape[0]
         del_za = del_state_a[-G_n:]
         mu = np.multiply(self.sk, self.zk)
-        rs = -np.multiply(self.lamda, self.lamda) - np.multiply(del_sa, del_za) - np.multiply(sigma, mu)
+        rs = -np.multiply(self.lamda, self.lamda) - np.multiply(del_sa, del_za) + np.multiply(sigma, mu)
 
         r_b = -r
         r_b[-self.sk.shape[0]:] += np.divide(rs, self.zk)
         
         factor = cholesky(sparse.csr_matrix(self.K_w))
         cent_del_state = factor(r_b)
-        print(cent_del_state)
+        print(f'cent_del_state : {cent_del_state}')
         del_s = -np.dot(Wt_W, cent_del_state[-self.G_n:]) - np.divide(rs, self.zk)
+        print(f'del_s : {del_s}')
         return del_s, cent_del_state
     
     def solve(self):
@@ -159,14 +167,14 @@ class QP:
             
             r, del_state, Wt_W = self.affine_direction()
 
-            del_s = -np.dot(Wt_W, del_state[-self.G_n:]) - self.sk
-            # del_s, sigma, alpha = self.compute_centering_params(del_state, Wt_W)
-            # del_s, cent_del_state = self.correction_step(del_sa, sigma, del_state, r, Wt_W)
+            # del_s = -np.dot(Wt_W, del_state[-self.G_n:]) - self.sk
+            del_sa, sigma, alpha = self.compute_centering_params(del_state, Wt_W)
+            del_s, cent_del_state = self.correction_step(del_sa, sigma, del_state, r, Wt_W)
             # print(alpha, cent_del_state)
-            self.xk +=  del_state[:self.P_n]
-            self.yk +=  del_state[self.P_n: self.P_n + self.A_n]
-            self.zk +=  del_state[-self.G_n:]
-            self.sk +=  del_s
+            self.xk +=  alpha*cent_del_state[:self.P_n]
+            self.yk +=  alpha*cent_del_state[self.P_n: self.P_n + self.A_n]
+            self.zk +=  alpha*cent_del_state[-self.G_n:]
+            self.sk +=  alpha*del_s
 
             print("Iteration No: ", i)
 
