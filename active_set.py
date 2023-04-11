@@ -34,14 +34,6 @@ class Active_set:
         self.v = self.tranpose(self.inverse(self.R)) * self.f
         self.d = self.b + self.M * self.v
 
-    def iterate(self):
-    
-
-    def initialize(self):
-
-        
-        
-
 
 
 def solve(Prob):
@@ -52,6 +44,8 @@ def solve(Prob):
 
     Prob.lamda = np.zeros(self.W.shape[0])
     Prob.lamda[0] = 3
+
+    k = 0;
 
     while true:
         
@@ -80,11 +74,52 @@ def solve(Prob):
                     Prob.W = np.hstack(Prob.W, Prob.W_hat[j])
 
             else:
+                
+                p_k = lamda_k - self.lamda
+                indexes = np.where(lamda_k < 0)
+                B_W = W_k[indexes]
 
+                lamda_next, W_next = fix_component(Prob.lamda, Prob.W, B_w, p_k)
+                self.lamda = lamda_next
+                self.W = W_next
 
+        else:
+
+            U, s, V = np.linalg.svd(M_k * M_k.T)
+            # extract the nullspace from the decomposition
+            nullspace = V[np.argwhere(s < 1e-10).flatten()]
+
+            p_k = None
+
+            for col in nullspace.T:
+                p_k = np.zeros(self.lamda_k.shape[0])
+                p_k[Prob.W] = col
+                if np.dot(col, p_k) < 0:
+                    p_k_w = vol
+                    break
+            
+            B = np.where(p_k < 0)
+            B_w = Prob.W[B]
+
+            Prob.lamda, Prob.W = fix_component(Prob.lamda, Prob.W, B_w, p_k)
+
+        k = k+1
+
+    x = -1 * np.inverse(self.R) * (M_k.T * lamda_k + Prob.v)
+    
+    return x, lamda_k, Prob.W
 
             
+def fix_component(lamda_k, W_k, B, p_k):
 
+    lamda_b = lamda_k[B]
+    p_b = p_k[B]
+
+    j = np.argmin( -1 * np.divide(lamda_b, p_b))
+    W_k = W_k[W_k != j]
+    lamda_k = lamda_k - lamda_k[j]/p_k[j] * p_k
+
+    return lamda_k, W_k
 
 
 
@@ -108,7 +143,5 @@ if __name__ == "__main__":
     # Forming Dual Objective
     prob.form_dual_objective()
     
-    y = solve(prob)
-
-
-    print(y)
+    ans, lamda, W = solve(prob)
+    print(ans)
