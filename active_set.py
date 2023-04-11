@@ -39,20 +39,51 @@ class Active_set:
 
     def initialize(self):
 
-
+        
         
 
 
 
 def solve(Prob):
     
-    Prob.W = np.zeros(self.H.shape[0])
-    Prob.W[0] = 1
+    ## Working Set. Will keep increasing with iterations ##
+    Prob.W = np.array([1])
+    Prob.W_hat = np.arange(2, self.W.shape[0])
 
-    
+    Prob.lamda = np.zeros(self.W.shape[0])
+    Prob.lamda[0] = 3
 
     while true:
+        
+        M_k = Prob.M[Prob.W, :]
+        d_k = Prob.d[Prob.W]
 
+        M_k_hat = Prob.M[Prob.W_hat, :]
+        d_k_hat = Prob.d[Prob.W_hat]
+
+        ############ Process ###########
+
+        if np.linalg.det(np.multiply(M_k, M_k.T)) != 0:
+            
+            factor = cholesky(sparse.csr_matrix(M_k * M_k.T))
+            lamda_k = factor(-d_k)
+
+            if np.all(lamda_k > 0):
+
+                mu_k = M_k_hat * (M_k.transpose * lamda_k) + d_k_hat
+                self.lamda = lamda_k
+
+                if np.all(mu_k > 0):
+                    break
+                else:
+                    j = np.argmin(mu_k)
+                    Prob.W = np.hstack(Prob.W, Prob.W_hat[j])
+
+            else:
+
+
+
+            
 
 
 
