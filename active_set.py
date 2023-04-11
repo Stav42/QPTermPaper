@@ -4,7 +4,7 @@ import numpy as np
 
 class Active_set:
 
-    def __init__(self, H, f, A, b, lamda):
+    def __init__(self, H, f, A, b):
 
         # Primal Formulation
         self.H = H
@@ -17,7 +17,7 @@ class Active_set:
         # Dual Formulation
         self.R = np.transpose(np.linalg.cholesky(self.H))
 
-        if(!np.allclose(self.R, np.triu(self.R))):# check if upper triangular
+        if not np.allclose(self.R, np.triu(self.R)):# check if upper triangular
             print(self.R)
             print("Not Upper!")
 
@@ -30,8 +30,8 @@ class Active_set:
 
     def form_dual_objective(self):
 
-        self.M = self.A * np.inverse(self.R)
-        self.v = self.tranpose(self.inverse(self.R)) * self.f
+        self.M = self.A * np.linalg.inv(self.R)
+        self.v = np.transpose(np.linalg.inv(self.R)) * self.f
         self.d = self.b + self.M * self.v
 
 
@@ -40,14 +40,14 @@ def solve(Prob):
     
     ## Working Set. Will keep increasing with iterations ##
     Prob.W = np.array([1])
-    Prob.W_hat = np.arange(2, self.W.shape[0])
+    Prob.W_hat = np.arange(2, Prob.W.shape[0])
 
-    Prob.lamda = np.zeros(self.W.shape[0])
+    Prob.lamda = np.zeros(Prob.W.shape[0])
     Prob.lamda[0] = 3
 
     k = 0;
 
-    while true:
+    while True:
         
         M_k = Prob.M[Prob.W, :]
         d_k = Prob.d[Prob.W]
@@ -92,7 +92,7 @@ def solve(Prob):
             p_k = None
 
             for col in nullspace.T:
-                p_k = np.zeros(self.lamda_k.shape[0])
+                p_k = np.zeros(Prob.lamda.shape[0])
                 p_k[Prob.W] = col
                 if np.dot(col, p_k) < 0:
                     p_k_w = vol
