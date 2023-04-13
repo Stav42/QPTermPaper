@@ -1,4 +1,6 @@
 import numpy as np
+from scipy import sparse
+from sksparse.cholmod import cholesky
 
 
 
@@ -30,16 +32,16 @@ class Active_set:
 
     def form_dual_objective(self):
 
-        self.M = self.A * np.linalg.inv(self.R)
-        self.v = np.transpose(np.linalg.inv(self.R)) * self.f
-        self.d = self.b + self.M * self.v
+        self.M = np.matmul(self.A, np.linalg.inv(self.R))
+        self.v = np.matmul(np.transpose(np.linalg.inv(self.R)), self.f)
+        self.d = self.b + np.matmul(self.M, self.v)
 
 
 
 def solve(Prob):
     
     ## Working Set. Will keep increasing with iterations ##
-    Prob.W = np.array([1])
+    Prob.W = np.array([0])
     Prob.W_hat = np.arange(2, Prob.W.shape[0])
 
     Prob.lamda = np.zeros(Prob.W.shape[0])
@@ -48,23 +50,31 @@ def solve(Prob):
     k = 0;
 
     while True:
-        
+        # print(Prob.d) 
         M_k = Prob.M[Prob.W, :]
         d_k = Prob.d[Prob.W]
+        # print(d_k)
 
         M_k_hat = Prob.M[Prob.W_hat, :]
         d_k_hat = Prob.d[Prob.W_hat]
 
         ############ Process ###########
 
-        if np.linalg.det(np.multiply(M_k, M_k.T)) != 0:
+        if np.linalg.det(np.matmul(M_k, M_k.T)) != 0:
             
-            factor = cholesky(sparse.csr_matrix(M_k * M_k.T))
+            factor = cholesky(sparse.csr_matrix(np.matmul(M_k, M_k.T)))
             lamda_k = factor(-d_k)
-
+            print(np.matmul(M_k, M_k.T))
+            print(-d_k)
+            print(factor(-d_k))
+            print(lamda_k)
+            print("Hello")
+            ############# ISSUES HERE #########################
             if np.all(lamda_k > 0):
-
-                mu_k = M_k_hat * (M_k.transpose * lamda_k) + d_k_hat
+                print("Hello 2")
+                print(M_k)
+                print(lamda_k)
+                mu_k = np.matmul(M_k_hat, np.matmul(M_k.transpose, lamda_k)) + d_k_hat
                 self.lamda = lamda_k
 
                 if np.all(mu_k > 0):
@@ -74,25 +84,35 @@ def solve(Prob):
                     Prob.W = np.hstack(Prob.W, Prob.W_hat[j])
 
             else:
-                
-                p_k = lamda_k - self.lamda
+                # print("Hello")
+                # print(lamda_k.shape)
+                # print(Prob.lamda.shape)
+                p_k = lamda_k - Prob.lamda
                 indexes = np.where(lamda_k < 0)
-                B_W = W_k[indexes]
+                # print(lamda_k)
+                # print(Prob.W.shape)
+                # print(Prob.W[indexes])
+                B_w = Prob.W[indexes]
+                
 
                 lamda_next, W_next = fix_component(Prob.lamda, Prob.W, B_w, p_k)
-                self.lamda = lamda_next
-                self.W = W_next
+                Prob.lamda = lamda_next
+                Prob.W = W_next
 
         else:
-
-            U, s, V = np.linalg.svd(M_k * M_k.T)
+            # print(np.linalg.det(np.matmul(M_k, M_k.T)))
+            U, s, V = np.linalg.svd(np.matmul(M_k,  M_k.T))
+            # print(M_k.shape)
+            # print(np.matmul(M_k, M_k.T).shape)
             # extract the nullspace from the decomposition
             nullspace = V[np.argwhere(s < 1e-10).flatten()]
-
+            # print(nullspace)
             p_k = None
 
             for col in nullspace.T:
+                # print(col)
                 p_k = np.zeros(Prob.lamda.shape[0])
+                # print(Prob.W)
                 p_k[Prob.W] = col
                 if np.dot(col, p_k) < 0:
                     p_k_w = vol
@@ -105,13 +125,16 @@ def solve(Prob):
 
         k = k+1
 
-    x = -1 * np.inverse(self.R) * (M_k.T * lamda_k + Prob.v)
+    x = -1 * np.matmul(np.inverse(self.R), (np.matmul(M_k.T, lamda_k) + Prob.v))
     
     return x, lamda_k, Prob.W
 
             
 def fix_component(lamda_k, W_k, B, p_k):
-
+    
+    # print("fix Component")
+    print(lamda_k)
+    print(B)
     lamda_b = lamda_k[B]
     p_b = p_k[B]
 
