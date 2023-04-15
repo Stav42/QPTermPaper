@@ -36,7 +36,7 @@ class Active_set{
         std::vector<int> W; std::vector<int> W_hat;
         Eigen::VectorXf lambda; Eigen::MatrixXf R;
 
-        Eigen::MatrixXf M; 
+        Eigen::MatrixXf M; Eigen::MatrixXf mu;
         Eigen::MatrixXf d;
         Eigen::MatrixXf v;
 
@@ -84,7 +84,45 @@ class Active_set{
 
     }
 
-    Eigen::MatrixXf replace_index(Eigen::MatrixXf lamda_k, Eigen::MatrixXf 
+    Eigen::MatrixXf replace_index(Eigen::MatrixXf lamda_k, Eigen::MatrixXf lamda_w_k, std::vector<int> W){
+    
+        idx = 0;
+        for(auto i: W){
+            lamda_k.row(i) = lamda_w_k.row(idx);
+            idx++;
+        }
+
+        return lamda_k;
+
+    }
+
+    bool all_ge_zero(Eigen::MatrixXf lamda){
+    
+        bool all_positive = (lamda.array() > 0).all();
+        return all_positive;
+    
+    }
+
+    int argmin(Eigen::MatrixXf mu, W_hat){
+
+        float min = 123123123;
+        int j = -1;
+
+        for(int i=0; i<W_hat.size(); i++){
+            if(mu[W_hat[i]]<min){
+                j = W_hat[i];
+                min = mu[W_hat[i]];
+            }
+        }
+        return j;
+    }
+
+    void remove(std::vector<int> &W, int k){
+        auto it = std::find(W.begin(), W.end(), k);
+        if (it != W.end()) { // if the value is found
+            W.erase(std::remove(W.begin(), W.end(), k), W.end());
+        }
+    }
 
     void solve(){
     
@@ -95,8 +133,10 @@ class Active_set{
         // std::cout<<this->W_hat<<std::endl;
         this->lambda = Eigen::VectorXf::Zero(this->M.rows());
         this->lambda[0] = 3;
+        Eigen::MatrixXf mu_k;
 
         int k = 0;
+        int j = -1;
 
         while(true){
             // std::cout<<"Working till here"<<std::endl; 
@@ -107,12 +147,31 @@ class Active_set{
             Eigen::MatrixXf d_w_hat = this->Splice_Index(this->W_hat, this->d);
             
             Eigen::MatrixXf MMt = M_w * M_w.transpose();
-            Eigen::MatrixXf lamda_k = this->lambda
+            Eigen::MatrixXf lamda_k = this->lambda    
 
             if(MMt.determinant()!=0){
                 // Non-Singular
                 lamda_w_k = MMt.inverse()*(-1*d_w);
                 lamda_k = replace_index(lamda_k, lamda_w_k, this->W);
+                
+                if(all_ge_zero(lamda_k)){
+                    Eigen::MatrixXf mu_k_hat = this->M_w_hat * this->M_w.transpose() * lamda_w_k + d_w_hat;
+                    mu_k = replace_index(mu_k, mu_k_hat, this->W_hat);
+                    this->lambda = lamda_k;
+
+                    if(all_ge_zero(mu_k))
+                        break;
+                    else{
+                        j = argmin(mu_k, this->W_hat);
+                        this->W.push_back(j)
+                        remove(this->W_hat, j);
+                    }
+                }
+
+                else{
+                    
+
+                }
             }
 
             else{
