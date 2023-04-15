@@ -86,7 +86,7 @@ class Active_set{
 
     Eigen::MatrixXf replace_index(Eigen::MatrixXf lamda_k, Eigen::MatrixXf lamda_w_k, std::vector<int> W){
     
-        idx = 0;
+        int idx = 0;
         for(auto i: W){
             lamda_k.row(i) = lamda_w_k.row(idx);
             idx++;
@@ -103,7 +103,7 @@ class Active_set{
     
     }
 
-    int argmin(Eigen::MatrixXf mu, W_hat){
+    int argmin(Eigen::MatrixXf mu, std::vector<int> W_hat){
 
         float min = 123123123;
         int j = -1;
@@ -135,7 +135,7 @@ class Active_set{
         return B;
     }
 
-    void fix_component(Eigen::MatrixXf lamda_k, std::vector<int> W, std::vector<int> B, Eigen::MatrixXf pk, Eigen::MatrixXf &lamda_next, std::vector<int> &W_next)
+    void fix_component(Eigen::MatrixXf lamda_k, std::vector<int> W, std::vector<int> B, Eigen::MatrixXf pk, Eigen::MatrixXf &lamda_next, std::vector<int> &W_next);
 
     void solve(){
     
@@ -160,15 +160,15 @@ class Active_set{
             Eigen::MatrixXf d_w_hat = this->Splice_Index(this->W_hat, this->d);
             
             Eigen::MatrixXf MMt = M_w * M_w.transpose();
-            Eigen::MatrixXf lamda_k = this->lambda    
+            Eigen::MatrixXf lamda_k = this->lambda;
 
             if(MMt.determinant()!=0){
                 // Non-Singular
-                lamda_w_k = MMt.inverse()*(-1*d_w);
+                Eigen::MatrixXf lamda_w_k = MMt.inverse()*(-1*d_w);
                 lamda_k = replace_index(lamda_k, lamda_w_k, this->W);
                 
                 if(all_ge_zero(lamda_k)){
-                    Eigen::MatrixXf mu_k_hat = this->M_w_hat * this->M_w.transpose() * lamda_w_k + d_w_hat;
+                    Eigen::MatrixXf mu_k_hat = M_w_hat * M_w.transpose() * lamda_w_k + d_w_hat;
                     mu_k = replace_index(mu_k, mu_k_hat, this->W_hat);
                     this->lambda = lamda_k;
 
@@ -176,7 +176,7 @@ class Active_set{
                         break;
                     else{
                         j = argmin(mu_k, this->W_hat);
-                        this->W.push_back(j)
+                        this->W.push_back(j);
                         remove(this->W_hat, j);
                     }
                 }
@@ -185,10 +185,10 @@ class Active_set{
                     std::vector<int> B = idx_le_zero(lamda_k, this->W);
                     Eigen::MatrixXf lamda_next;
                     std::vector<int> W_next;
-                    fix_component(lamda_k, this->W, B, pk)
+                    fix_component(lamda_k, this->W, B, pk);
+                    this->lambda = lamda_k;
                 }
             }
-
             else{
                 // Singular
                 Eigen::MatrixXf mat = M_w * M_w.transpose();
@@ -205,9 +205,10 @@ class Active_set{
                 Eigen::MatrixXf pk;
 
                 for(int i=0; i<null_space.cols(); i++){
-                    col = null_space.col(i);
-                    pk_temp = replace_index(pk, col, this->W);
-                    float dot = pk_temp.transpose() * this->d;
+                    Eigen::MatrixXf col = null_space.col(i);
+                    Eigen::MatrixXf pk_temp = replace_index(pk, col, this->W);
+                    // CHECK SIZES
+                    float dot = pk_temp.dot(this->d);
                     if(dot<0){
                         pk = pk_temp;  
                     }
@@ -215,14 +216,15 @@ class Active_set{
 
                 std::vector<int> B = idx_le_zero(pk, this->W);
                 fix_component(lamda_k, this->W, B, pk); 
+                this->lambda = lamda_k;
+
             }
 
             k++;
         }
 
-        Eigen::MatrixXf X = -1 * this.R.inverse() * (M_k.transpose() * Splice_Index(lamda_k, this->W) + this->v);
+        Eigen::MatrixXf X = -1 * this->R.inverse() * (Splice_Index(this->W, this->M).transpose() * Splice_Index(this->W, this->lambda) + this->v);
         this->x = X;
-        this->lambda = lamda_k;
         
     };
 
@@ -239,7 +241,7 @@ class Active_set{
         remove(W, j);
         lamda_k = lamda_k - (lamda_k[j]/pk[j])*pk;
     }
-
+};
 
 int main(){
 
