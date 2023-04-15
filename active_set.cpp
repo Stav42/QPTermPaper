@@ -124,6 +124,19 @@ class Active_set{
         }
     }
 
+    std::vector<int> idx_le_zero(Eigen::MatrixXf lambda, std::vector<int> W){
+    
+        std::vector<int> B;
+        for(int i=0; i<W.size(); i++){
+            if(lambda[W[i]][0]<0)
+                B.push_back(W[i]);
+        }
+
+        return B;
+    }
+
+    void fix_component(Eigen::MatrixXf lamda_k, std::vector<int> W, std::vector<int> B, Eigen::MatrixXf pk, Eigen::MatrixXf &lamda_next, std::vector<int> &W_next)
+
     void solve(){
     
         this->W.push_back(0);
@@ -167,25 +180,65 @@ class Active_set{
                         remove(this->W_hat, j);
                     }
                 }
-
                 else{
-                    
-
+                    Eigen::MatrixXf pk = lamda_k - this->lambda;
+                    std::vector<int> B = idx_le_zero(lamda_k, this->W);
+                    Eigen::MatrixXf lamda_next;
+                    std::vector<int> W_next;
+                    fix_component(lamda_k, this->W, B, pk)
                 }
             }
 
             else{
                 // Singular
-                //
+                Eigen::MatrixXf mat = M_w * M_w.transpose();
+                Eigen::FullPivHouseholderQR<Eigen::MatrixXf> qr(mat);
+                Eigen::MatrixXf Q = qr.matrixQ();
+
+                Eigen::MatrixXf null_space;
+                if (qr.rank() < mat.cols()) {
+                    null_space = Q.rightCols(mat.cols() - qr.rank());
+                } else {
+                    null_space = Eigen::MatrixXf::Zero(mat.rows(), 0);
+                }
+
+                Eigen::MatrixXf pk;
+
+                for(int i=0; i<null_space.cols(); i++){
+                    col = null_space.col(i);
+                    pk_temp = replace_index(pk, col, this->W);
+                    float dot = pk_temp.transpose() * this->d;
+                    if(dot<0){
+                        pk = pk_temp;  
+                    }
+                }
+
+                std::vector<int> B = idx_le_zero(pk, this->W);
+                fix_component(lamda_k, this->W, B, pk); 
             }
 
-            break;
+            k++;
         }
 
+        Eigen::MatrixXf X = -1 * this.R.inverse() * (M_k.transpose() * Splice_Index(lamda_k, this->W) + this->v);
+        this->x = X;
+        this->lambda = lamda_k;
+        
+    };
+
+    void fix_component(Eigen::MatrixXf lamda_k, std::vector<int> &W, std::vector<int> B, Eigen::MatrixXf pk){
+        
+        int j = -1;
+        float min = 123123123;
+        for(int i = 0; i<B.size(); i++){
+            if(-1*lamda_k[B[i]]/pk[B[i]] < min){
+                min = -1*lamda_k[B[i]]/pk[B[i]];
+                j = B[i];
+            }
+        }
+        remove(W, j);
+        lamda_k = lamda_k - (lamda_k[j]/pk[j])*pk;
     }
-
-};
-
 
 
 int main(){
@@ -217,6 +270,7 @@ int main(){
     Active_set Prob(H, A, f, b);
 
     Prob.solve();
+    std::cout<<Prob.x<<std::endl;
 
     return 0;
 }
