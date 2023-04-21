@@ -14,7 +14,7 @@ class ADMM():
         self.q = q; self.l = l; self.u = u
         self.P = sparse.csc_matrix(P)
         self.A = sparse.csc_matrix(A)
-        
+
         #cold start
         self.xk = np.zeros(self.n); self.yk = np.zeros(self.m); self.zk = np.zeros(self.m)
 
