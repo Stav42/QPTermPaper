@@ -3,36 +3,64 @@
 import numpy as np
 from scipy import sparse
 import scipy.sparse.linalg as la
-import qdldl
-
 class ADMM():
     
     def __init__(self,P,q,A,l,u):
         
         self.n = P.shape[0]
         self.m = l.shape[0]
-        self.q = q; self.l = l; self.u = u
+        self.q = q 
+        self.l = l 
+        self.u = u
         self.P = sparse.csc_matrix(P)
         self.A = sparse.csc_matrix(A)
+        self.rho = np.zeros(self.m)
+        self.rho_o = 0.1
+        self.rho_rng = [1e-6,1e+6]
+        self.adap_rho_tol = 5
+        self.infty = 1e+30
+        self.scale = [1e-4,1e+4] #[min_scaling, max_scaling]
+        self.first_run = 1
 
         #cold start
         self.xk = np.zeros(self.n); self.yk = np.zeros(self.m); self.zk = np.zeros(self.m)
 
         #store previous values
         self.x_prev = None; self.z_prev = None
+        
         #admm params
         self.sigma = 1e-6
         self.alpha = 1.6
+        self._scaling = 10
+
+        #scale params
+        self.D = None
+        self.E = None
+        self.Dinv = None
+        self.Einv = None
+        self.c = None
         
+        #setup 
+        if self.first_run:
+            self.scaler()
+            self.setup_rho()
+            self.setup_K_matrix()
+            self.first_run = 0
+        
+    def setup_rho(self):
         #vectorized rho
-        rho_o = 0.1
-        self.rho = np.zeros(self.m)
+        rho_o = np.minimum(np.maximum(self.rho_o,self.rho_rng[0]),self.rho_rng[1])
+
+        loose = np.where(np.logical_and(self.l<-self.infty*self.scale[0],self.u>self.infty*self.scale[1]))[0]
         eq = np.where((self.u-self.l)<1e-4)[0]
-        ineq = np.setdiff1d(np.arange(self.m),eq)
+        ineq = np.setdiff1d(np.setdiff1d(np.arange(self.m),eq),loose)
+        self.rho[loose] = self.rho_rng[0]
         self.rho[eq] = (1e3)*rho_o
         self.rho[ineq] = rho_o
         self.rho_inv = np.reciprocal(self.rho)
+        #call setup_K_matrix() everytime after setup_rho() is called
 
+    def setup_K_matrix(self):
         #K matrix in step 1
         K1 = self.P + self.sigma*sparse.eye(self.n)
         K2 = -sparse.diags(self.rho_inv)
@@ -47,6 +75,88 @@ class ADMM():
     def linearsolver(self,rhs):
         sol = self.K.solve(rhs)
         return sol
+
+    def K_norm_cols(self,P,A):
+        P_norm = la.norm(P,np.inf,axis=0)
+        A_norm = la.norm(A,np.inf,axis=0)
+        norm_ist = np.maximum(P_norm,A_norm)
+        norm_2nd = la.norm(A,np.inf,axis=1)
+
+        return np.hstack((norm_ist,norm_2nd))
+
+    def limit(self,vec):
+        try:
+            for i in range(len(vec)):
+                if vec[i]<self.scale[0]:
+                    vec[i] = 1.0
+                elif vec[i]>self.scale[1]:
+                    vec[i] = self.scale[1]
+        except:
+            if vec<self.scale[0]:
+                vec = 1.0
+            elif vec>self.scale[1]:
+                vec = self.scale[1]
+            
+        return vec
+
+    def scaler(self):
+        s = np.ones(self.n+self.m)
+        c = 1.0
+
+        P = self.P
+        q = self.q
+        A = self.A
+        l = self.l
+        u = self.u
+
+        '''
+        S = [[D    ],
+             [    E]]
+        '''
+        D = sparse.eye(self.m)
+        E = sparse.eye(self.m)
+
+        for i in range(self._scaling):
+            inf_norm_cols = self.K_norm_cols(P,A)
+            inf_norm_cols = self.limit(inf_norm_cols)
+            s = np.reciprocal(np.sqrt(inf_norm_cols))
+
+            D_temp = sparse.diags(s[:self.n])
+            E_temp = sparse.diags(s[self.n:])
+
+            P = D_temp.dot(P.dot(D_temp)).tocsc()
+            A = D_temp.dot(A.dot(D_temp)).tocsc()
+            q = D_temp.dot(q)
+            l = E_temp.dot(l)
+            u = E_temp.dot(u)
+
+            D = D_temp.dot(D)
+            E = E_temp.dot(E)
+
+            #cost
+            inf_norm_P = la.norm(P,np.inf,axis=0).mean()
+            inf_norm_q = self.limit(np.linalg.norm(q, np.inf))
+            cost = self.limit(np.maximum(inf_norm_P,inf_norm_q))
+            cost = 1./cost
+
+            gamma = cost
+            P = gamma*P
+            q = gamma*q
+            c = gamma*c
+
+            self.P = P
+            self.A = A
+            self.q = q
+            self.l = l
+            self.u = u
+
+            self.D = D
+            self.Dinv = sparse.diags(np.reciprocal(D.diagonal()))
+            self.E = E
+            self.Einv = sparse.diags(np.reciprocal(D.diagonal()))
+            self.c = c
+        
+        return
     
     def create_rhs(self):
         rhs = np.zeros(self.n+self.m)
@@ -60,10 +170,14 @@ class ADMM():
     
     def solve(self):
         #Part 3 of algorithm 1: uses xk,yk,zk to solve
-        rhs = self.create_rhs()    
+        self.x_prev = np.copy(self.xk)
+        self.z_prev = np.copy(self.zk)
+        rhs = self.create_rhs()   
+
         xz_tilde =  self.linearsolver(rhs)
         #ztilde
-        xz_tilde[self.n:] = self.z_prev + self.rho_inv*(xz_tilde[self.n:] - self.yk)
+        ztilde = xz_tilde[self.n:]
+        xz_tilde[self.n:] = self.z_prev + self.rho_inv*(ztilde - self.yk)
 
         #update variables
         self.xk = self.alpha*xz_tilde[:self.n] + (1-self.alpha)*self.x_prev
@@ -75,26 +189,54 @@ class ADMM():
         self.yk = self.yk + self.rho*num2 
     
     def residuals(self):
-        v1 = self.A.dot(self.xk) - self.zk
+        #Computed for scaled QP
+        v1 = self.Einv.dot(self.A.dot(self.xk) - self.zk)
         r_prim = np.linalg.norm(v1,np.inf)
 
         v2 = self.P.dot(self.xk) + self.q + self.A.T.dot(self.yk)
+        v2 = (1./self.c)*self.Dinv.dot(v2)
         r_dual = np.linalg.norm(v2,np.inf)
 
         max_prim = np.max([
-                        np.linalg.norm(self.A.dot(self.xk),np.inf),
-                        np.linalg.norm(self.zk,np.inf)
+                        np.linalg.norm(self.Einv.dot(self.A.dot(self.xk)),np.inf),
+                        np.linalg.norm(self.Einv.dot(self.zk),np.inf)
         ])
-        max_dual = np.max([
-                        np.linalg.norm(self.A.T.dot(self.yk),np.inf),
-                        np.linalg.norm(self.P.dot(self.xk),np.inf),
-                        np.linalg.norm(self.q,np.inf)
+        max_dual = (1./self.c)*np.max([
+                        np.linalg.norm(self.Dinv.dot(self.A.T.dot(self.yk)),np.inf),
+                        np.linalg.norm(self.Dinv.dot(self.P.dot(self.xk)),np.inf),
+                        np.linalg.norm(self.Dinv.dot(self.q),np.inf)
         ])
 
         e_prim = 0.001 + 0.001*max_prim
         e_dual = 0.001 + 0.001*max_dual
 
         return r_prim,r_dual,e_prim,e_dual
+
+    def estimate_new_rho(self):
+        P = self.P
+        A = self.A
+        q = self.q
+
+        # Compute normalized residuals
+        r_prim = np.linalg.norm(A.dot(self.xk) - self.zk, np.inf)
+        r_prim /= (np.max([np.linalg.norm(A.dot(self.xk), np.inf),
+                            np.linalg.norm(self.zk, np.inf)]) + 1e-10)
+        r_dual = np.linalg.norm(P.dot(self.xk) + q + A.T.dot(self.yk), np.inf)
+        r_dual /= (np.max([np.linalg.norm(A.T.dot(self.yk), np.inf),
+                           np.linalg.norm(P.dot(self.xk), np.inf),
+                           np.linalg.norm(q, np.inf)]) + 1e-10)
+
+        # Compute new rho
+        rho_o_new = self.rho_o * np.sqrt(r_prim/(r_dual + 1e-10))
+        rho_o_new = np.minimum(np.maximum(rho_o_new, self.rho_rng[0]), self.rho_rng[1])
+
+        if rho_o_new>=0 and \
+            ((rho_o_new > self.adap_rho_tol*self.rho_o) or (rho_o_new < (1./self.adap_rho_tol)*self.rho_o)):
+             self.rho_o = rho_o_new
+             #update rho and rho_inv vectors
+             self.setup_rho()
+             #update KKT matrix
+             self.setup_K_matrix()
 
 if __name__ == '__main__':
 
@@ -121,17 +263,25 @@ if __name__ == '__main__':
     print(f'Initial state : {obj.xk}')
 
     for i in range(0,max_iter):
-        print(f'Iteration {i}')
-        obj.x_prev = np.copy(obj.xk)
-        obj.z_prev = np.copy(obj.yk)
+        print(f'Iteration {i+1}')
 
         obj.solve()
 
-        print(f'Current state : {obj.xk}, {obj.yk}, {obj.zk}')
+        #termination status
+        print(f'Current state : {obj.xk}')
+
         r_prim,r_dual,e_prim,e_dual = obj.residuals()
         print(f'Residuals : {r_prim}, {r_dual}')
         print(f'Tolerance : {e_prim}, {e_dual}')
         if r_prim < e_prim and r_dual < e_dual:
             print("Converged!")
             break
+
+        #estimate new rho_o
+        if i%200 == 0:
+            old_rho_o = obj.rho_o
+            obj.estimate_new_rho()
+            if obj.rho_o != old_rho_o:
+                print(f'Rho value changed to {obj.rho_o}')
+
     print("Done")
