@@ -159,7 +159,7 @@ class ADMM():
             self.D = D
             self.Dinv = sparse.diags(np.reciprocal(D.diagonal()))
             self.E = E
-            self.Einv = sparse.diags(np.reciprocal(D.diagonal()))
+            self.Einv = sparse.diags(np.reciprocal(E.diagonal()))
             self.c = c
         
         return
@@ -183,7 +183,7 @@ class ADMM():
         xz_tilde =  self.linearsolver(rhs)
         
         ##
-        print(f'xz_tilde {xz_tilde}')
+        # print(f'xz_tilde {xz_tilde}')
 
         #ztilde
         ztilde = xz_tilde[self.n:]
@@ -289,7 +289,6 @@ if __name__ == '__main__':
 
         #termination status
         print(f'x = {obj.xk}, y = {obj.yk}, z = {obj.zk}')
-        print(obj.xk/2)
 
         r_prim,r_dual,e_prim,e_dual = obj.residuals()
         
