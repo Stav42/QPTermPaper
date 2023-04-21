@@ -74,6 +74,7 @@ def get_traj(n_t = 100, dt = 0.5, phase_ratio = [0.4, 0.4, 0.2]):
     t_traj = np.hstack((t1, t2))
     t_traj = np.hstack((t_traj, t3))
 
+    return t_traj
     # print(t_traj.shape)
     # print(t_traj)
 
