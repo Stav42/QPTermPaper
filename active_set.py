@@ -38,7 +38,7 @@ class Active_set:
     def form_dual_objective(self):
 
         self.M = self.A.dot(self.Rinv)
-        Rinv_T = np.transpose(self.Rinv)
+        Rinv_T = self.Rinv.T
         self.v = Rinv_T.dot(self.f)
         self.d = self.b + self.M.dot(self.v)
 
@@ -69,7 +69,7 @@ def solve(Prob):
 
         M_k_hat = Prob.M[Prob.W_hat]
         d_k_hat = Prob.d[Prob.W_hat]
-
+        mu_k = np.zeros((Prob.m, 1))
         ############ Process ###########
         '''
         MMT = (M_k)(M_k.T)
@@ -79,10 +79,10 @@ def solve(Prob):
             print(f'Step 3')
             #create sparse matrix
             MMT_sparse = sparse.csc_matrix(MMT)
-            if not MMT_sparse.sort_indices:
-                MMT_sparse.sort_indices()
+            # if not MMT_sparse.sort_indices:
+            #     MMT_sparse.sort_indices()
 
-            lamda_k = Prob.lamda.copy() #copy by reference
+            lamda_k = Prob.lamda.copy() #copy by value
             factor = cholesky(MMT_sparse)
             lamda_k_W = factor(-d_k)
 
@@ -94,14 +94,23 @@ def solve(Prob):
             if np.all(lamda_k >= -Prob.eps_d):
                 print(f'Step 5')
                 mu_k_W_hat = M_k_hat.dot(M_k.T.dot(lamda_k_W)) + d_k_hat
+                mu_k[Prob.W_hat] = mu_k_W_hat
                 Prob.lamda = lamda_k
 
-                if np.all(mu_k_W_hat > -Prob.eps_p):
+                if np.all(mu_k > -Prob.eps_p):
                     print("Converged!")
                     break
                 else:
-                    j = np.argmin(mu_k_W_hat)
+                    min_mu = np.inf
+                    j = None
+                    for i_w_hat in Prob.W_hat:
+                        if mu_k[i_w_hat]<min_mu:
+                            min_mu =  mu_k[i_w_hat]
+                            j = i_w_hat
+                
+                    # j = Prob.W_hat[np.argmin(mu_k_W_hat)]
                     Prob.W = np.hstack((Prob.W, j)) #check output
+                    Prob.W_hat = np.setdiff1d(np.arange(Prob.m),Prob.W)
                     print(f'Step 7: New W \n {Prob.W}')
 
             else:
