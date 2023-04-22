@@ -8,12 +8,10 @@ class ADMM():
     def __init__(self,P,q,A,l,u):
         
         self.n = P.shape[0]
-        self.m = l.shape[0]
+        self.m = A.shape[0]
         self.q = q 
-        self.l = l 
-        self.u = u
-        self.P = sparse.csc_matrix(P)
-        self.A = sparse.csc_matrix(A)
+        self.P = sparse.csc_matrix((P.data,P.indices,P.indptr),shape=(self.n,self.n))
+        self.A = sparse.csc_matrix((A.data,A.indices,A.indptr),shape=(self.m,self.n))
         self.rho = np.zeros(self.m)
         self.rho_o = 0.1
         self.rho_rng = [1e-6,1e+6]
@@ -21,6 +19,15 @@ class ADMM():
         self.infty = 1e+30
         self.scale = [1e-4,1e+4] #[min_scaling, max_scaling]
         self.first_run = 1
+
+        self.l = np.maximum(l,-self.infty)
+        self.u =  np.minimum(u,self.infty)
+
+        # print(self.P.toarray())
+        # print(self.A.toarray())
+        # print(self.q)
+        # print(self.l)
+        # print(self.u)
 
         #cold start
         self.xk = np.zeros(self.n); self.yk = np.zeros(self.m); self.zk = np.zeros(self.m)
@@ -66,7 +73,7 @@ class ADMM():
         K2 = -sparse.diags(self.rho_inv)
         kkt = sparse.vstack([
             sparse.hstack([K1,self.A.T]),
-            sparse.hstack([A,K2])
+            sparse.hstack([self.A,K2])
         ])
 
         #factorization
@@ -113,7 +120,7 @@ class ADMM():
         S = [[D    ],
              [    E]]
         '''
-        D = sparse.eye(self.m)
+        D = sparse.eye(self.n)
         E = sparse.eye(self.m)
 
         for i in range(self._scaling):
@@ -125,7 +132,7 @@ class ADMM():
             E_temp = sparse.diags(s[self.n:])
 
             P = D_temp.dot(P.dot(D_temp)).tocsc()
-            A = D_temp.dot(A.dot(D_temp)).tocsc()
+            A = E_temp.dot(A.dot(D_temp)).tocsc()
             q = D_temp.dot(q)
             l = E_temp.dot(l)
             u = E_temp.dot(u)
@@ -137,15 +144,14 @@ class ADMM():
             inf_norm_P = la.norm(P,np.inf,axis=0).mean()
             inf_norm_q = self.limit(np.linalg.norm(q, np.inf))
             cost = self.limit(np.maximum(inf_norm_P,inf_norm_q))
-            cost = 1./cost
+            gamma = 1./cost
 
-            gamma = cost
             P = gamma*P
             q = gamma*q
             c = gamma*c
 
-            self.P = P
-            self.A = A
+            self.P = sparse.csc_matrix((P.data,P.indices,P.indptr),shape=(self.n,self.n))
+            self.A = sparse.csc_matrix((A.data,A.indices,A.indptr),shape=(self.m,self.n))
             self.q = q
             self.l = l
             self.u = u
@@ -153,7 +159,7 @@ class ADMM():
             self.D = D
             self.Dinv = sparse.diags(np.reciprocal(D.diagonal()))
             self.E = E
-            self.Einv = sparse.diags(np.reciprocal(D.diagonal()))
+            self.Einv = sparse.diags(np.reciprocal(E.diagonal()))
             self.c = c
         
         return
@@ -175,6 +181,10 @@ class ADMM():
         rhs = self.create_rhs()   
 
         xz_tilde =  self.linearsolver(rhs)
+        
+        ##
+        # print(f'xz_tilde {xz_tilde}')
+
         #ztilde
         ztilde = xz_tilde[self.n:]
         xz_tilde[self.n:] = self.z_prev + self.rho_inv*(ztilde - self.yk)
@@ -256,9 +266,19 @@ if __name__ == '__main__':
     
     u = np.array([3.0,-1.0,-1.0])
 
-    max_iter = 10
+    max_iter = 50
+
+    #setup P,A
+    P = sparse.csc_matrix(P)
+    A = sparse.csc_matrix(A)
+
+    if not P.has_sorted_indices:
+        P.sort_indices()
+    if not A.has_sorted_indices:
+        A.sort_indices()
 
     obj = ADMM(P,q,A,l,u) 
+    sol_x = None
     
     print(f'Initial state : {obj.xk}')
 
@@ -268,13 +288,19 @@ if __name__ == '__main__':
         obj.solve()
 
         #termination status
-        print(f'Current state : {obj.xk}')
+        print(f'x = {obj.xk}, y = {obj.yk}, z = {obj.zk}')
 
         r_prim,r_dual,e_prim,e_dual = obj.residuals()
-        print(f'Residuals : {r_prim}, {r_dual}')
-        print(f'Tolerance : {e_prim}, {e_dual}')
+        
+        print(f'Primal res = {r_prim}, Primal tol = {e_prim}')
+        print(f'Dual res = {r_dual}, Dual tol = {e_dual}')
+
         if r_prim < e_prim and r_dual < e_dual:
+            #unscale solution
+            sol_x = obj.D.dot(obj.xk) 
             print("Converged!")
+
+            print(f'Final x = {sol_x}')
             break
 
         #estimate new rho_o
@@ -283,5 +309,13 @@ if __name__ == '__main__':
             obj.estimate_new_rho()
             if obj.rho_o != old_rho_o:
                 print(f'Rho value changed to {obj.rho_o}')
+
+    #TODO : Unscale P, q as well
+    opt_val = .5 * np.dot(sol_x, obj.P.dot(sol_x)) + \
+        np.dot(obj.q, sol_x)
+    opt_val = opt_val/obj.c
+
+    print(f'Optimal objective : {opt_val}')
+
 
     print("Done")
