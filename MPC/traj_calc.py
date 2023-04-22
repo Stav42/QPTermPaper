@@ -41,46 +41,80 @@ def get_traj(n_t = 100, dt = 0.5, phase_ratio = [0.4, 0.4, 0.2]):
 
     T_1[:, 0] = np.array([0, 0, np.pi, 0])
     T_2[:, 0] = np.array([3, 2, np.pi/2, 0])
-    T_3[:, 0] = np.array([2, 0, 0, -np.pi/6])
+    T_3[:, 0] = np.array([2, 0, 0, 0])
     T_3[:, -1] = np.array([0, 0, np.pi, 0])
     
     ### FOR FIRST PHASE ###############
     
     X_1 = T_1[:, 0]
     X_2 = T_2[:, 0]
+    
+    ## For X
     tx = spline_fit(X_1[0], X_1[1], X_2[0], X_2[1], n_t_1, dur_1)
+    for i in range(1, tx.shape[0]):
+        tx[i, 0] = tx[i-1, 0] + dt*tx[i-1, 1]
+    # print(tx)
+    ## For Theta
     tt = spline_fit(X_1[2], X_1[3], X_2[2], X_2[3], n_t_1, dur_1)
+    for i in range(1, tt.shape[0]):
+        tt[i, 0] = tt[i-1, 0] + dt*tt[i-1, 1]
+
+    # print(tx[:, 0])
+    # plt.plot(tx[:, 0])
     t = np.hstack((tx, tt))
     t1 = np.transpose(t)
+    # print(t1.shape)
 
     ##### FOR SECOND PHASE ####################
     
     X_2 = T_2[:, 0]
     X_3 = T_3[:, 0]
     tx = spline_fit(X_2[0], X_2[1], X_3[0], X_3[1], n_t_2, dur_2)
+    # print(tx)
+    for i in range(0, tx.shape[0]):
+        if i == 0:
+            tx[0, 0] = t1[0, -1]
+            continue
+        tx[i, 0] = tx[i-1, 0] + dt*tx[i-1, 1]
+
     tt = spline_fit(X_2[2], X_2[3], X_3[2], X_3[3], n_t_2, dur_2)
+    for i in range(1, tt.shape[0]):
+        if i == 0:
+            tt[0, 0] = t1[2, -1]
+            continue
+        tt[i][0] = tt[i-1][0] + dt*tt[i-1][1]
+
+    # plt.plot(tx[:, 0])
     t = np.hstack((tx, tt))
     t2 = np.transpose(t)
-
+     
     #### FOR THIRD PHASE ####################
 
     X_3 = T_3[:, 0]
     X_4 = T_3[:, -1]
     tx = spline_fit(X_3[0], X_3[1], X_4[0], X_4[1], n_t_3, dur_3)
+    for i in range(1, tx.shape[0]):
+        if i == 0:
+            tx[0, 0] = t2[0, -1]
+            continue
+        tx[i, 0] = tx[i-1, 0] + dt*tx[i-1, 1]
+
     tt = spline_fit(X_3[2], X_3[3], X_4[2], X_4[3], n_t_3, dur_3)
+    for i in range(1, tt.shape[0]):
+        if i == 0:
+            tt[0, 0] = t2[2, -1]
+            continue
+        tt[i][0] = tt[i-1][0] + dt*tt[i-1][1]
+
     t = np.hstack((tx, tt))
     t3 = np.transpose(t)
  
     t_traj = np.hstack((t1, t2))
     t_traj = np.hstack((t_traj, t3))
 
-    return t_traj
-    # print(t_traj.shape)
-    # print(t_traj)
-
+    # print(t_traj[0, :])
     # plt.plot(t_traj[0, :])
-    # plt.show()
 
+    return t_traj
 
-# get_traj()
 
