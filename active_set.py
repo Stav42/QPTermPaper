@@ -130,6 +130,7 @@ def solve(Prob):
                 print("lamda_next: ", lamda_next)
                 Prob.lamda = lamda_next
                 Prob.W = W_next
+                Prob.W_hat = np.setdiff1d(np.arange(Prob.m),Prob.W)
 
         else:
             print(f'Step 12:')
@@ -137,14 +138,15 @@ def solve(Prob):
             # extract the nullspace from the decomposition
             nullspace = V[np.argwhere(s < 1e-10).flatten()]
             print(nullspace)
-            p_k = None
+            p_k = np.zeros((Prob.m, 1))
 
             for col in nullspace.T:
                 # print(col)
-                p_k = np.zeros(Prob.m)
+                # p_k = np.zeros(Prob.m)
                 # print(Prob.W)
-                p_k[Prob.W] = col
-                if col.dot(p_k) < Prob.eps_z:
+                # p_k[Prob.W] = col
+                p_k[Prob.W] = col.copy()
+                if col.dot(Prob.d) < Prob.eps_z:
                     break
             
             print(f'Step 13')
@@ -155,7 +157,10 @@ def solve(Prob):
             B = np.array(B)
             print(f'B : {B}')
 
-            Prob.lamda, Prob.W = fix_component(Prob.lamda, Prob.W, B, p_k)
+            lamda_next, W_next = fix_component(Prob.lamda, Prob.W, B, p_k)
+            Prob.lamda = lamda_next.copy()
+            Prob.W = W_next.copy()
+            Prob.W_hat = np.setdiff1d(np.arange(Prob.m),Prob.W)
 
         k = k+1
 
@@ -181,7 +186,7 @@ def fix_component(lamda_k, W_k, B, p_k):
     #removes j from W_k
     W_new = np.setdiff1d(W_k,j) 
     print("New W_k", W_new)
-    lamda_new = lamda_k - (lamda_k[j]/p_k[j]) * p_k
+    lamda_new = lamda_k - (lamda_k[j][0]/p_k[j][0]) * p_k
 
     return lamda_new, W_new
 
