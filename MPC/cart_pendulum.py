@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
 import time
 import traj_calc
 from qpsolvers import available_solvers, print_matrix_vector, solve_qp
@@ -9,6 +10,7 @@ import active_set
 import admmsolver
 from scipy import sparse
 import scipy.sparse.linalg as la
+matplotlib.rcParams.update({'font.size': 22})
 
 h = 10
 Xt = traj_calc.get_traj(n_t=100, dt = 0.5)
@@ -95,12 +97,12 @@ def solve_admm(P, q, lb, ub):
 def solve_qpswift(P, c, ub, lb):
 
     G = np.zeros((2 * P.shape[0], P.shape[1]))
-    h = np.zeros((2 * P.shape[0], 1))
+    h = np.zeros(2 * P.shape[0])
     G[:P.shape[0], :] = np.eye(P.shape[0])
     G[P.shape[0]:, :] = -1 * np.eye(P.shape[0])
-    h[np.arange(P.shape[0])] = ub
-    h[np.arange(start = P.shape[0], stop = 2*P.shape[0])] = -1*lb
-    c = np.expand_dims(c, axis=1)
+    h[np.arange(P.shape[0])] = ub[:, 0]
+    h[np.arange(start = P.shape[0], stop = 2*P.shape[0])] = -1*lb[:, 0]
+    # c = np.expand_dims(c, axis=1)
     # print(P.shape, q.shape, A.shape, b.shape)
     t1 = time.time()
     res = qpSWIFT.run(P = P, c = c, G = G, h = h)
@@ -137,13 +139,13 @@ class CartPendulum:
         ub =  10 * np.ones([4, 1])
             
         # t1 = time.time()
-        # self.Xd = solve_asm(P = np.eye(4) * A, q = B, lb = lb, ub = ub)
+        self.Xd = solve_asm(P = np.eye(4) * A, q = B, lb = lb, ub = ub)
         # self.Xd = solve_admm(P = np.eye(4) * A, q = B, lb = lb, ub = ub)
-        # self.Xd = solve_qpswift(P = P, c = q, lb = lb, ub = ub)
-        self.Xd = qpSWIFT.run(P = np.eye(4) * A, c = B, lb = lb, ub = ub, solver = "qp_swift")
+        # self.Xd = solve_qpswift(P = np.eye(4) * A, c = B, lb = lb, ub = ub)
+        # self.Xd = qpSWIFT.run(P = np.eye(4) * A, c = B, lb = lb, ub = ub, solver = "qp_swift")
         # t2 = time.time()
 
-        dur.append(t2-t1)
+        # dur.append(t2-t1)
         # print(self.Xd)
 
     def propagate_acc(self):
@@ -187,6 +189,20 @@ class CartPendulum:
         self.state = state
         # print(state)
 
+def mse_error(a, b):
+
+    a_len = a.shape[0]
+    b_len = b.shape[0]
+
+    length = min(a_len, b_len)
+
+    s = 0
+    for i in np.arange(length):
+        s += (a[i] - b[i])**2
+
+    c = s/length
+    c = c**0.5
+    return c
     
 if __name__ == "__main__":
 
@@ -196,9 +212,9 @@ if __name__ == "__main__":
     for i in range(85):
         # print("i : ", i)
         Pendulum.MPC(Xt = Xt, t = i, dt = 0.5)
-        # F = Pendulum.calculate_F()
-        # Pendulum.forward_dynamics(F, dt = 0.5)
-        Pendulum.propagate_acc()
+        F = Pendulum.calculate_F()
+        Pendulum.forward_dynamics(F, dt = 0.5)
+        # Pendulum.propagate_acc()
         state_list = np.expand_dims(Pendulum.state, axis=0)
         states = np.vstack((states, state_list))
 
@@ -207,34 +223,42 @@ if __name__ == "__main__":
     Xt = Xt.T
     a = states[:, 0]
     b = Xt[:, 0]
+
+    A = mse_error(a, b)
+
     c = states[:, 1]
     d = Xt[:, 1]
     e = states[:, 2]
     f = Xt[:, 2]
+
+    B = mse_error(e, f)
+
     g = states[:, 3]
     h = Xt[:, 3]
 
+    print("MSE Over X: ", A)
+    print("MSE Over Theta: ", B)
     # print(a.shape)
     print("iterations: ", sum(itr)/len(itr), len(itr))
     print("time till convergence", sum(dur)/len(dur), len(dur))
     # print(b.shape)
-    plt.figure(0)
-    plt.plot(a)
-    plt.plot(b)
-
-    plt.figure(1)
-    plt.plot(c)
-    plt.plot(d)
-
-    plt.figure(2)
-    plt.plot(e)
-    plt.plot(f)
-
-    plt.figure(3)
-    plt.plot(g)
-    plt.plot(h)
-
-    plt.show()
+    # plt.figure(0)
+    # plt.plot(a)
+    # plt.plot(b)
+    #
+    # plt.figure(1)
+    # plt.plot(c)
+    # plt.plot(d)
+    #
+    # plt.figure(2)
+    # plt.plot(e)
+    # plt.plot(f)
+    #
+    # plt.figure(3)
+    # plt.plot(g)
+    # plt.plot(h)
+    #
+    # plt.show()
 
 
         
