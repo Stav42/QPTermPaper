@@ -2,10 +2,82 @@ import numpy as np
 import matplotlib.pyplot as plt
 import traj_calc
 from qpsolvers import available_solvers, print_matrix_vector, solve_qp
+# import active_set_prox
+import active_set
+import admmsolver
+from scipy import sparse
+import scipy.sparse.linalg as la
 
 h = 10
 Xt = traj_calc.get_traj(n_t=100, dt = 0.5)
 duration = 100 * 0.5
+
+def solve_asm(P, q, lb, ub):
+
+    A = np.zeros((2 * P.shape[0], P.shape[1]))
+    b = np.zeros((2 * P.shape[0], 1))
+    A[:P.shape[0], :] = np.eye(P.shape[0])
+    A[P.shape[0]:, :] = -1 * np.eye(P.shape[0])
+    b[np.arange(P.shape[0])] = ub
+    b[np.arange(start = P.shape[0], stop = 2*P.shape[0])] = -1*lb
+    q = np.expand_dims(q, axis=1)
+    print(P.shape, q.shape, A.shape, b.shape)
+    Prob = active_set.Active_set(H = P, f = q, A = A, b = b)
+    Prob.form_dual_objective()
+    x, lamda, W = active_set.solve(Prob)
+    return x
+
+def solve_admm(P, q, lb, ub):
+
+
+    A = np.eye(P.shape[0])
+    P = sparse.csc_matrix(P)
+    A = sparse.csc_matrix(A)
+
+    obj = admmsolver.ADMM(P, q, A, lb, ub)
+    sol_x = None
+    max_iter = 200
+
+    for i in range(0,max_iter):
+        print(f'Iteration {i+1}')
+
+        obj.solve()
+
+        #termination status
+        print(f'x = {obj.xk}, y = {obj.yk}, z = {obj.zk}')
+
+        r_prim,r_dual,e_prim,e_dual = obj.residuals()
+        
+        print(f'Primal res = {r_prim}, Primal tol = {e_prim}')
+        print(f'Dual res = {r_dual}, Dual tol = {e_dual}')
+
+        if r_prim < e_prim and r_dual < e_dual:
+            #unscale solution
+            sol_x = obj.D.dot(obj.xk) 
+            print("Converged!")
+
+            print(f'Final x = {sol_x}')
+            break
+
+        #estimate new rho_o
+        if i%200 == 0:
+            old_rho_o = obj.rho_o
+            obj.estimate_new_rho()
+            if obj.rho_o != old_rho_o:
+                print(f'Rho value changed to {obj.rho_o}')
+
+    #TODO : Unscale P, q as well
+    opt_val = .5 * np.dot(sol_x, obj.P.dot(sol_x)) + \
+        np.dot(obj.q, sol_x)
+    opt_val = opt_val/obj.c
+
+    print(f'Optimal objective : {opt_val}')
+
+
+    print("Done")
+    return sol_x
+
+
 
 class CartPendulum:
 
@@ -29,7 +101,9 @@ class CartPendulum:
         lb = -10 * np.ones([4, 1])
         ub =  10 * np.ones([4, 1])
 
-        self.Xd = solve_qp(P = np.eye(4) * A, q = B, lb = lb, ub = ub, solver = "osqp")
+        # self.Xd = solve_asm(P = np.eye(4) * A, q = B, lb = lb, ub = ub)
+        self.Xd = solve_admm(P = np.eye(4) * A, q = B, lb = lb, ub = ub)
+        # self.Xd = solve_qp(P = np.eye(4) * A, q = B, lb = lb, ub = ub, solver = "osqp")
 
         print(self.Xd)
 
@@ -83,9 +157,9 @@ if __name__ == "__main__":
     for i in range(85):
         # print("i : ", i)
         Pendulum.MPC(Xt = Xt, t = i, dt = 0.5)
-        F = Pendulum.calculate_F()
-        Pendulum.forward_dynamics(F, dt = 0.5)
- #       Pendulum.propagate_acc()
+        # F = Pendulum.calculate_F()
+        # Pendulum.forward_dynamics(F, dt = 0.5)
+        Pendulum.propagate_acc()
         state_list = np.expand_dims(Pendulum.state, axis=0)
         states = np.vstack((states, state_list))
 
