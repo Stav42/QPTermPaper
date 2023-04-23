@@ -1,12 +1,11 @@
 import active_set_prox as asm
 import admmsolver as admm
-import qpSWIFT
+from qpsolvers import solve_qp
 from sksparse.cholmod import cholesky
 import time
 import numpy as np
 from scipy import sparse
 import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
@@ -189,7 +188,7 @@ gamma = 1.0
 
 b = y_train
 P = sparse.block_diag([sparse.eye(n), sparse.csc_matrix((m, m))], format='csc').toarray()
-c = np.hstack([np.zeros(n), gamma*np.ones(m)])
+q = np.hstack([np.zeros(n), gamma*np.ones(m)])
 
 '''
 diag(b)Ax - t <= -1
@@ -208,10 +207,14 @@ G = sparse.vstack([
 h = np.hstack([-np.ones(m), np.zeros(m)])
 
 #QP with inequality constraints
-reseq = qpSWIFT.run(c,h,P,G,opts=opts)
+t1 = time.time()
+reseq = solve_qp(P,q,G,h,solver="qpswift")
+t2 = time.time() - t1
+
+print(f'Total time = {t2}s')
 
 #test model
-wt = reseq['sol'][:4]
+wt = reseq[:4]
 y_pred = X_test.dot(wt)
 y_pred[y_pred<-1] = 1
 y_pred[y_pred>1] = -1
