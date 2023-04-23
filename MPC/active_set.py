@@ -76,7 +76,7 @@ def solve(Prob):
         '''
         MMT = M_k.dot(M_k.T) 
         if np.linalg.det(MMT) != 0:
-            print(f'Step 3')
+            # print(f'Step 3')
             #create sparse matrix
             MMT_sparse = sparse.csc_matrix(MMT)
             # if not MMT_sparse.sort_indices:
@@ -86,19 +86,19 @@ def solve(Prob):
             factor = cholesky(MMT_sparse)
             lamda_k_W = factor(-d_k)
 
-            print("W : \n ", Prob.W)
-            print("M_k : \n ", M_k)
+            # print("W : \n ", Prob.W)
+            # print("M_k : \n ", M_k)
             lamda_k[Prob.W] = lamda_k_W
-            print(f'lambda_k : \n {lamda_k}')
+            # print(f'lambda_k : \n {lamda_k}')
 
             if np.all(lamda_k >= -Prob.eps_d):
-                print(f'Step 5')
+                # print(f'Step 5')
                 mu_k_W_hat = M_k_hat.dot(M_k.T.dot(lamda_k_W)) + d_k_hat
                 mu_k[Prob.W_hat] = mu_k_W_hat
                 Prob.lamda = lamda_k
 
                 if np.all(mu_k > -Prob.eps_p):
-                    print("Converged!")
+                    # print("Converged!")
                     break
                 else:
                     min_mu = np.inf
@@ -111,10 +111,10 @@ def solve(Prob):
                     # j = Prob.W_hat[np.argmin(mu_k_W_hat)]
                     Prob.W = np.hstack((Prob.W, j)) #check output
                     Prob.W_hat = np.setdiff1d(np.arange(Prob.m),Prob.W)
-                    print(f'Step 7: New W \n {Prob.W}')
+                    # print(f'Step 7: New W \n {Prob.W}')
 
             else:
-                print('Step 9')
+                # print('Step 9')
                 p_k = lamda_k - Prob.lamda
                 #index included in working set where lamda<0
                 B = [] 
@@ -123,21 +123,21 @@ def solve(Prob):
                         B.append(idx)
 
                 B = np.array(B)
-                print("B: ", B)                
-
-                print('Step 14')
+                # print("B: ", B)                
+                #
+                # print('Step 14')
                 lamda_next, W_next = fix_component(Prob.lamda, Prob.W, B, p_k)
-                print("lamda_next: ", lamda_next)
+                # print("lamda_next: ", lamda_next)
                 Prob.lamda = lamda_next
                 Prob.W = W_next
                 Prob.W_hat = np.setdiff1d(np.arange(Prob.m),Prob.W)
 
         else:
-            print(f'Step 12:')
+            # print(f'Step 12:')
             U, s, V = np.linalg.svd(MMT)
             # extract the nullspace from the decomposition
             nullspace = V[np.argwhere(s < 1e-10).flatten()]
-            print(nullspace)
+            # print(nullspace)
             p_k = np.zeros((Prob.m, 1))
 
             for col in nullspace.T:
@@ -149,13 +149,13 @@ def solve(Prob):
                 if col.dot(Prob.d) < Prob.eps_z:
                     break
             
-            print(f'Step 13')
+            # print(f'Step 13')
             B = []
             for idx in Prob.W:
                 if p_k[idx] < Prob.eps_z:
                     B.append(idx)
             B = np.array(B)
-            print(f'B : {B}')
+            # print(f'B : {B}')
 
             lamda_next, W_next = fix_component(Prob.lamda, Prob.W, B, p_k)
             Prob.lamda = lamda_next.copy()
@@ -163,16 +163,16 @@ def solve(Prob):
             Prob.W_hat = np.setdiff1d(np.arange(Prob.m),Prob.W)
 
         k = k+1
-
-    print(f'Step 16')
+    print(k)
+    # print(f'Step 16')
     x = -1 * Prob.Rinv.dot(M_k.T.dot(lamda_k_W) + Prob.v)
     
-    return x, Prob.lamda, Prob.W
+    return k, x, Prob.lamda, Prob.W
 
             
 def fix_component(lamda_k, W_k, B, p_k):
     
-    print(f'Step 18')
+    # print(f'Step 18')
     min_val = np.inf
     j = 0
 
@@ -182,10 +182,10 @@ def fix_component(lamda_k, W_k, B, p_k):
             min_val = temp
             j = i
             
-    print(f'Old W_k: \n {W_k} \n j = {j}')
+    # print(f'Old W_k: \n {W_k} \n j = {j}')
     #removes j from W_k
     W_new = np.setdiff1d(W_k,j) 
-    print("New W_k", W_new)
+    # print("New W_k", W_new)
     lamda_new = lamda_k - (lamda_k[j][0]/p_k[j][0]) * p_k
 
     return lamda_new, W_new
