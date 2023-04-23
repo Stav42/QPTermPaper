@@ -1,5 +1,3 @@
-#https://github.com/osqp/osqp-python/blob/master/src/osqppurepy/_osqp.py
-
 import numpy as np
 from scipy import sparse
 import scipy.sparse.linalg as la
@@ -22,12 +20,6 @@ class ADMM():
 
         self.l = np.maximum(l,-self.infty)
         self.u =  np.minimum(u,self.infty)
-
-        # print(self.P.toarray())
-        # print(self.A.toarray())
-        # print(self.q)
-        # print(self.l)
-        # print(self.u)
 
         #cold start
         self.xk = np.zeros(self.n); self.yk = np.zeros(self.m); self.zk = np.zeros(self.m)
@@ -182,9 +174,6 @@ class ADMM():
 
         xz_tilde =  self.linearsolver(rhs)
         
-        ##
-        # print(f'xz_tilde {xz_tilde}')
-
         #ztilde
         ztilde = xz_tilde[self.n:]
         xz_tilde[self.n:] = self.z_prev + self.rho_inv*(ztilde - self.yk)
@@ -283,32 +272,32 @@ if __name__ == '__main__':
     print(f'Initial state : {obj.xk}')
 
     for i in range(0,max_iter):
-        print(f'Iteration {i+1}')
+        # print(f'Iteration {i+1}')
 
         obj.solve()
 
         #termination status
-        print(f'x = {obj.xk}, y = {obj.yk}, z = {obj.zk}')
+        # print(f'x = {obj.xk}, y = {obj.yk}, z = {obj.zk}')
 
         r_prim,r_dual,e_prim,e_dual = obj.residuals()
         
-        print(f'Primal res = {r_prim}, Primal tol = {e_prim}')
-        print(f'Dual res = {r_dual}, Dual tol = {e_dual}')
+        # print(f'Primal res = {r_prim}, Primal tol = {e_prim}')
+        # print(f'Dual res = {r_dual}, Dual tol = {e_dual}')
 
         if r_prim < e_prim and r_dual < e_dual:
             #unscale solution
             sol_x = obj.D.dot(obj.xk) 
             print("Converged!")
 
-            print(f'Final x = {sol_x}')
+            # print(f'Final x = {sol_x}')
             break
 
         #estimate new rho_o
         if i%200 == 0:
             old_rho_o = obj.rho_o
             obj.estimate_new_rho()
-            if obj.rho_o != old_rho_o:
-                print(f'Rho value changed to {obj.rho_o}')
+            # if obj.rho_o != old_rho_o:
+                # print(f'Rho value changed to {obj.rho_o}')
 
     #TODO : Unscale P, q as well
     opt_val = .5 * np.dot(sol_x, obj.P.dot(sol_x)) + \
